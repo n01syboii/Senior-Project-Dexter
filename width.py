@@ -10,11 +10,12 @@ angle_min = 180 - angle_dif
 angle_max = 180 + angle_dif
 
 scan_buffer = []
-NUM_SCANS = 10
+NUM_SCANS = 15
 
 def process_scan(scan):
     global scan_buffer
 
+    # Add new scan to buffer
     scan_buffer.append(scan.ranges)
 
     # Keep only the last 10 scans
@@ -28,6 +29,7 @@ def process_scan(scan):
     # Compute average ranges (averaging each angle across 10 scans)
     avg_ranges = np.nanmean(scan_buffer, axis=0)
 
+    # Process the averaged scan
     process_averaged_scan(scan, avg_ranges)
 
 def process_averaged_scan(scan, avg_ranges):
@@ -44,9 +46,9 @@ def process_averaged_scan(scan, avg_ranges):
 
     corners = find_corners(angles, distances)
 
-    if len(corners) < 2:
-        rospy.logwarn("Not enough corners found, skipping this scan.")
-        return
+    # if len(corners) < 2:
+    #     rospy.logwarn("Not enough corners found, skipping this scan.")
+    #     return
 
     # Sort corners by angle and take leftmost + rightmost
     corners = sorted(corners, key=lambda x: x[0])
@@ -54,22 +56,22 @@ def process_averaged_scan(scan, avg_ranges):
     left_corner = corners[0]
     right_corner = corners[-1]
 
-    print(f"Left Corner: {left_corner}, Right Corner: {right_corner}")
+    # print(f"Left Corner: {left_corner}, Right Corner: {right_corner}")
 
-    width = channel_width(left_corner, right_corner)
-    if width:
-        print(f"Channel width: {width:.2f} meters")
+    # width = channel_width(left_corner, right_corner)
+    # if width:
+    #     print(f"Channel width: {width:.2f} meters")
 
-    # # Plot for visualization
-    # pltx.scatter(angles, distances)
-    # pltx.scatter([left_corner[0], right_corner[0]], [left_corner[1], right_corner[1]], color="red")
+    # Plot for visualization
+    pltx.scatter(angles, distances)
+    pltx.scatter([left_corner[0], right_corner[0]], [left_corner[1], right_corner[1]], color="red")
 
-    # pltx.xlim(angle_min, angle_max)
-    # pltx.ylim(0, 4)
-    # pltx.show()
+    pltx.xlim(angle_min, angle_max)
+    pltx.ylim(0, 4)
+    pltx.show()
 
-    # pltx.clt()
-    # pltx.cld()
+    pltx.clt()
+    pltx.cld()
 
 
 # def process_averaged_scan(scan, avg_ranges):
@@ -132,8 +134,7 @@ def channel_width(left_corner, right_corner):
         return width
     else:
         return None
-
-
+    
 def listener():
     rospy.init_node('lidar_width_processor', anonymous=True)
     rospy.Subscriber('/scan', LaserScan, process_scan)

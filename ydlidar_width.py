@@ -14,7 +14,7 @@ angle_max = 180 + angle_dif
 
 # Buffer for scan averaging
 scan_buffer = []
-NUM_SCANS = 5  # Number of scans to average
+NUM_SCANS = 1  # Number of scans to average
 MAX_SCAN_POINTS = 2000  # Ensure scans are padded to this length
 
 # Find available ports and set Lidar port
@@ -75,6 +75,10 @@ def process_scan(scan):
     scan_buffer_np = np.array(scan_buffer, dtype=np.float32)
     avg_ranges = np.nanmean(scan_buffer_np, axis=0)  # Compute mean ignoring NaNs
 
+
+    # # Apply Gaussian smoothing to remove noise
+    # smoothed_ranges = gaussian_filter1d(avg_ranges, sigma=2)
+
     # Process the averaged scan (without smoothing)
     process_averaged_scan(angles, avg_ranges)
 
@@ -83,12 +87,12 @@ def process_averaged_scan(angles, distances):
     """ Processes the averaged scan to detect corners and compute channel width. """
     corners = find_corners(angles, distances)
 
-    # # Sort corners by angle and select the leftmost and rightmost points
-    # corners = sorted(corners, key=lambda x: x[0])
-    # left_corner, right_corner = corners[0], corners[-1]
+    # Sort corners by angle and select the leftmost and rightmost points
+    corners = sorted(corners, key=lambda x: x[0])
+    left_corner, right_corner = corners[0], corners[-1]
 
     # Compute the channel width
-    # width = channel_width(left_corner, right_corner)
+    width = channel_width(left_corner, right_corner)
 
     # # Print width if it's valid
     # if width:
@@ -98,7 +102,7 @@ def process_averaged_scan(angles, distances):
 
     # Plot Lidar data and detected corners
     pltx.scatter(angles, distances)
-    # pltx.scatter([left_corner[0], right_corner[0]], [left_corner[1], right_corner[1]], color="red")
+    pltx.scatter([left_corner[0], right_corner[0]], [left_corner[1], right_corner[1]], color="red")
 
     pltx.xlim(angle_min, angle_max)
     pltx.ylim(0, 4)

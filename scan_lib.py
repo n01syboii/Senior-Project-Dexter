@@ -107,9 +107,7 @@ def process_averaged_scan():
     
 def plot_scan(angles, distances, edges, corners):
     """Plots the processed Lidar scan."""
-    # pltx.scatter(angles, distances, label="Distances")
-    
-    pltx.event_plot(distances)
+    pltx.scatter(angles, distances, label="Distances")
     
     # # Highlight detected edges
     # if edges:
@@ -127,23 +125,23 @@ def plot_scan(angles, distances, edges, corners):
     pltx.clt()
     pltx.cld()
 
-def detect_corners(edges, angle_threshold=1):
-    """Identifies corners from detected edges by checking angle changes."""
-    corners = []
+# def detect_corners(edges, angle_threshold=1):
+#     """Identifies corners from detected edges by checking angle changes."""
+#     corners = []
     
-    for i in range(1, len(edges) - 1):
-        angle1, _ = edges[i - 1]
-        angle2, _ = edges[i]
-        angle3, _ = edges[i + 1]
+#     for i in range(1, len(edges) - 1):
+#         angle1, _ = edges[i - 1]
+#         angle2, _ = edges[i]
+#         angle3, _ = edges[i + 1]
 
-        angle_change1 = abs(angle2 - angle1)
-        angle_change2 = abs(angle3 - angle2)
+#         angle_change1 = abs(angle2 - angle1)
+#         angle_change2 = abs(angle3 - angle2)
 
-        # If both angle changes exceed a threshold, it's a corner
-        if angle_change1 > angle_threshold and angle_change2 > angle_threshold:
-            corners.append(edges[i])
+#         # If both angle changes exceed a threshold, it's a corner
+#         if angle_change1 > angle_threshold and angle_change2 > angle_threshold:
+#             corners.append(edges[i])
 
-    return corners
+#     return corners
 
 # Initialize Lidar and start processing
 if laser.initialize():

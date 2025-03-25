@@ -107,17 +107,19 @@ def process_averaged_scan():
     
 def plot_scan(angles, distances, edges, corners):
     """Plots the processed Lidar scan."""
-    pltx.scatter(angles, distances, label="Distances")
+    # pltx.scatter(angles, distances, label="Distances")
+    
+    pltx.event_plot(distances)
     
     # # Highlight detected edges
     # if edges:
     #     edge_angles, edge_distances = zip(*edges)
     #     pltx.scatter(edge_angles, edge_distances, color="red", label="Edges")
 
-    # Highlight detected corners
-    if corners:
-        corner_angles, corner_distances = zip(*corners)
-        pltx.scatter(corner_angles, corner_distances, color="red", label="Corners")
+    # # Highlight detected corners
+    # if corners:
+    #     corner_angles, corner_distances = zip(*corners)
+    #     pltx.scatter(corner_angles, corner_distances, color="red", label="Corners")
     
     pltx.xlim(angle_min, angle_max)
     pltx.ylim(0, 4)

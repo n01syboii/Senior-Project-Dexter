@@ -46,16 +46,16 @@ robot_running: bool = False
 yaw_final = yaw
 yaw_init = yaw
 
-q_star = 1
+q_star = 0.5
 repulse_strength = 1
-d_star_goal = 0.5
+d_star_goal = 0.2
 attractive_strength = 1
-goal_position = np.zeros(2)
+goal_position = [0, 2]
 
 
 # pygame setup
 pygame.init()
-screen = pygame.display.set_mode((1920, 1080))
+screen = pygame.display.set_mode((1000, 1000))
 clock = pygame.time.Clock()
 running = True
 
@@ -70,6 +70,16 @@ def tictoc(func):
 
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
+
+
+def vector_to_steering(angle: float) -> float:
+    if angle >= 0:
+        return angle
+
+    if angle > -90:
+        return 0
+
+    return 180
 
 
 def repulsive_formal(axis: float, distance: float) -> float:
@@ -112,20 +122,20 @@ def lidar() -> None:
         #     potential_sum[0] -= repulsive_formal(x, ran)
         #     potential_sum[1] -= repulsive_formal(y, ran)
 
-        potential_sum[0] += attractive_formal(position[0] - goal_position[0])
-        potential_sum[1] += attractive_formal(position[1] - goal_position[1])
+        potential_sum[0] += attractive_formal(goal_position[0] - position[0])
+        potential_sum[1] += attractive_formal(goal_position[1] - position[1])
 
         resultant_magnitude = np.linalg.norm(potential_sum)
         resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
 
-        resultant_angle = clamp(resultant_angle + 90, 0, 180)
-        resultant_magnitude = clamp(resultant_magnitude, 0, 40)
+        resultant_angle = clamp(vector_to_steering(resultant_angle), 30, 160)
+        resultant_magnitude = clamp(resultant_magnitude, 0, 0)
 
         bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
         bot.set_pwm_servo(1, resultant_angle)
 
-        x_draw: float = x * 100 + 960 + position[0] * 100
-        y_draw: float = y * 100 + 540 + position[1] * 100
+        x_draw: float = x * 100 + 500 + position[0] * 100
+        y_draw: float = y * 100 + 500 + position[1] * 100
 
         pygame.draw.circle(screen, (255, 0, 0), (x_draw, y_draw), 2)
 
@@ -148,10 +158,8 @@ def deadreckoning() -> None:
 
         _, _, yaw = bot.get_imu_attitude_data()
         real_angle = yaw - fix_angel_drift
-        print(position)
 
         distance = ave_encoder_diff / encoder_to_meter
-        print(distance)
         position[0] += math.cos(math.radians(real_angle)) * distance
         position[1] += math.sin(math.radians(real_angle)) * distance
         position[2] = real_angle
@@ -195,7 +203,7 @@ while running:
     lidar()
     deadreckoning()
     pygame.draw.circle(
-        screen, (0, 255, 0), (960 + position[0] * 100, 540 + position[1] * 100), 8
+        screen, (0, 255, 0), (500 + position[0] * 100, 500 + position[1] * 100), 8
     )
 
     bot.set_motor(0, speed, 0, speed)
@@ -204,6 +212,8 @@ while running:
     pygame.display.flip()
 
     clock.tick(1000)  # limits FPS to 60
+    print(clock.get_fps())
+
 
 laser.turnOff()
 laser.disconnecting()

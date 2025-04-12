@@ -58,18 +58,17 @@ pygame.init()
 screen = pygame.display.set_mode((1000, 1000))
 clock = pygame.time.Clock()
 running = True
-
-
-def tictoc(func):
-    def wrapper():
-        before_time = time.time()
-        func()
-        diff_time = time.time() - before_time
-        print(f"{func.__name__} ran in {diff_time} seconds")
+font = pygame.font.SysFont("Arial", 18)
 
 
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
+
+
+def update_fps():
+    fps = str(int(clock.get_fps()))
+    fps_text = font.render(fps, 1, pygame.Color("coral"))
+    return fps_text
 
 
 def vector_to_steering(angle: float) -> float:
@@ -82,13 +81,24 @@ def vector_to_steering(angle: float) -> float:
     return 180
 
 
-def repulsive_formal(axis: float, distance: float) -> float:
-    return (
+def repulsive_formal(repulse_cloud) -> float:
+    distance = (repulse_cloud[0] ** 2 + repulse_cloud[1] ** 2) ** 0.5
+
+    x = (
         repulse_strength
         * ((1 / q_star) - (1 / distance))
         * (1 / (distance**2))
-        * ((axis) / distance)
+        * (repulse_cloud[0] / distance)
     )
+
+    y = (
+        repulse_strength
+        * ((1 / q_star) - (1 / distance))
+        * (1 / (distance**2))
+        * (repulse_cloud[1] / distance)
+    )
+
+    return np.sum(x), np.sum(y)
 
 
 def attractive_formal(axis: float) -> float:
@@ -106,38 +116,72 @@ def lidar() -> None:
     if not laser.doProcessSimple(scan):
         return
 
-    potential_sum = np.zeros(2)
+    angle_list = []
+    range_list = []
+    repulse_list = []
 
     for point in scan.points:
-        angle: float = point.angle
-        ran: float = point.range
+        point_range = point.range
 
-        if 0.1 > ran:
+        if point_range < 0.09:
             continue
 
-        x: float = math.cos(angle - math.radians(position[2])) * ran
-        y: float = math.sin(angle - math.radians(position[2])) * ran
+        angle_list.append(point.angle)
+        range_list.append(point_range)
+        repulse_list.append(point_range < q_star)
 
-        # if q_star > ran:
-        #     potential_sum[0] -= repulsive_formal(x, ran)
-        #     potential_sum[1] -= repulsive_formal(y, ran)
+    angle_list = np.array(angle_list)
+    range_list = np.array(range_list)
 
-        potential_sum[0] += attractive_formal(goal_position[0] - position[0])
-        potential_sum[1] += attractive_formal(goal_position[1] - position[1])
+    pos_angle = math.radians(position[2])
+    angle_list -= pos_angle
 
-        resultant_magnitude = np.linalg.norm(potential_sum)
-        resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
+    x: float = np.cos(angle_list) * range_list
+    y: float = np.sin(angle_list) * range_list
 
-        resultant_angle = clamp(vector_to_steering(resultant_angle), 30, 160)
-        resultant_magnitude = clamp(resultant_magnitude, 0, 0)
+    point_cloud = [x, y]
+    repulse_cloud = [x[repulse_list], y[repulse_list]]
 
-        bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
-        bot.set_pwm_servo(1, resultant_angle)
+    return point_cloud, repulse_cloud
 
-        x_draw: float = x * 100 + 500 + position[0] * 100
-        y_draw: float = y * 100 + 500 + position[1] * 100
 
-        pygame.draw.circle(screen, (255, 0, 0), (x_draw, y_draw), 2)
+def apf(repulse_cloud):
+    potential_sum = np.zeros(2)
+
+    x, y = repulsive_formal(repulse_cloud)
+    potential_sum[0] -= x
+    potential_sum[1] -= y
+
+    potential_sum[0] += attractive_formal(goal_position[0] - position[0])
+    potential_sum[1] += attractive_formal(goal_position[1] - position[1])
+
+    resultant_magnitude = np.linalg.norm(potential_sum)
+    resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
+
+    draw_points = [
+        [0, 10],
+        [0, -10],
+        [35, -10],
+        [35, -15],
+        [50, 0],
+        [35, 15],
+        [35, 10],
+    ]
+    pygame.draw.polygon(screen, (100, 100, 100), draw_points)
+
+    resultant_angle = clamp(vector_to_steering(resultant_angle), 30, 160)
+    resultant_magnitude = clamp(resultant_magnitude, 0, 0)
+
+    # bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
+    bot.set_pwm_servo(1, resultant_angle)
+
+
+def draw_map(point_cloud) -> None:
+    x_draw: float = point_cloud[0] * 100 + 500 + position[0] * 100
+    y_draw: float = point_cloud[1] * 100 + 500 + position[1] * 100
+
+    for i, _ in enumerate(x_draw):
+        pygame.draw.circle(screen, (255, 0, 0), (x_draw[i], y_draw[i]), 2)
 
 
 def deadreckoning() -> None:
@@ -178,9 +222,10 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.MOUSEBUTTONUP:
-            goal_position = (pygame.mouse.get_pos()) / 100
+            goal_position = np.array(pygame.mouse.get_pos()) / 100
 
     screen.fill("white")
+    screen.blit(update_fps(), (10, 0))
     key = pygame.key.get_pressed()
 
     steering_angle: int
@@ -200,19 +245,32 @@ while running:
     else:
         steering_angle = 90
 
-    lidar()
-    deadreckoning()
-    pygame.draw.circle(
-        screen, (0, 255, 0), (500 + position[0] * 100, 500 + position[1] * 100), 8
+    draw_x = int(position[0] * 100) + 500
+    draw_y = int(position[1] * 100) + 500
+    draw_rot_x = math.cos(math.radians(position[2]))
+    draw_rot_y = math.sin(math.radians(position[2]))
+
+    draw_points = np.array(
+        [
+            [15 + draw_x, 10 + draw_y],
+            [15 + draw_x, -10 + draw_y],
+            [-15 + draw_x, 0 + draw_y],
+        ]
     )
 
+    pygame.draw.polygon(screen, (0, 255, 0), draw_points)
+
+    point_cloud, repulse_cloud = lidar()
+
+    draw_map(point_cloud)
+    apf(repulse_cloud)
+    deadreckoning()
+
     bot.set_motor(0, speed, 0, speed)
-    bot.set_pwm_servo(1, steering_angle)
+    # bot.set_pwm_servo(1, steering_angle)
 
-    pygame.display.flip()
-
-    clock.tick(1000)  # limits FPS to 60
-    print(clock.get_fps())
+    pygame.display.update()
+    clock.tick(60)  # limits FPS to 60
 
 
 laser.turnOff()

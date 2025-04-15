@@ -3,7 +3,6 @@ import time
 
 # measure the yaw of the robot with the hlp of IMU sensor
 import numpy as np
-import pygame
 import ydlidar
 from Rosmaster_Lib import Rosmaster
 
@@ -49,47 +48,22 @@ yaw_init = yaw
 q_star = 0.5
 repulse_strength = 1
 d_star_goal = 0.5
-attractive_strength = 100
-goal_position = [0, 0.0]
-
-
-# pygame setup
-pygame.init()
-screen = pygame.display.set_mode((1000, 1000))
-clock = pygame.time.Clock()
-running = True
-font = pygame.font.SysFont("Arial", 18)
+attractive_strength = 250
+goal_position = [0.0, 1]
 
 
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
 
 
-def tranfrom_matrix(matrix, angle_degrees, move_x, move_y):
-    theta = np.radians(angle_degrees)
-    cos_a, sin_a = np.cos(theta), np.sin(theta)
-    rotation_matrix = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
-    matrix = matrix @ rotation_matrix
-    matrix[0] += move_x
-    matrix[1] += move_y
-
-    return matrix
-
-
-def update_fps():
-    fps = str(int(clock.get_fps()))
-    fps_text = font.render(fps, 1, pygame.Color("coral"))
-    return fps_text
-
-
-def vector_to_servo(angle: float) -> float:
-    angle = 180 - angle
-
-    if angle <= 180:
+def vector_to_steering(angle: float) -> float:
+    if angle >= 0:
         return angle
-    if angle <= 270:
-        return 180
-    return 0
+
+    if angle > -90:
+        return 0
+
+    return 180
 
 
 def repulsive_formal(repulse_cloud) -> float:
@@ -169,34 +143,15 @@ def apf(repulse_cloud):
     resultant_magnitude = np.linalg.norm(potential_sum)
     resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
 
-    draw_points = [
-        [0, 10],
-        [0, -10],
-        [35, -10],
-        [35, -15],
-        [50, 0],
-        [35, 15],
-        [35, 10],
-    ]
-    pygame.draw.polygon(screen, (100, 100, 100), draw_points)
-
     print(
         f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
     )
 
-    resultant_angle = vector_to_servo(resultant_angle)
+    resultant_angle = clamp(vector_to_steering(resultant_angle), 30, 160)
     resultant_magnitude = clamp(resultant_magnitude, 0, 40)
 
     bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
     bot.set_pwm_servo(1, resultant_angle)
-
-
-def draw_map(point_cloud) -> None:
-    x_draw: float = point_cloud[0] * 100 + 500 + position[0] * 100
-    y_draw: float = point_cloud[1] * 100 + 500 + position[1] * 100
-
-    for i, _ in enumerate(x_draw):
-        pygame.draw.circle(screen, (255, 0, 0), (x_draw[i], y_draw[i]), 2)
 
 
 def deadreckoning() -> None:
@@ -232,61 +187,16 @@ def deadreckoning() -> None:
     prev_right_encoder = current_right_encoder
 
 
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if event.type == pygame.MOUSEBUTTONUP:
-            goal_position = np.array(pygame.mouse.get_pos()) / 100
-
-    screen.fill("white")
-    screen.blit(update_fps(), (10, 0))
-    key = pygame.key.get_pressed()
-
-    steering_angle: int
-    speed: int
-
-    if key[pygame.K_w]:
-        speed = 45
-    elif key[pygame.K_s]:
-        speed = -45
-    else:
-        speed = 0
-
-    if key[pygame.K_d]:
-        steering_angle = 150
-    elif key[pygame.K_a]:
-        steering_angle = 30
-    else:
-        steering_angle = 90
-
-    draw_x = int(position[0] * 100) + 500
-    draw_y = int(position[1] * 100) + 500
-
-    draw_points = np.array(
-        [
-            [10, 15],
-            [-10, 15],
-            [0, -15],
-        ]
-    )
-    draw_points = tranfrom_matrix(draw_points, position[2], draw_x, draw_y)
-
-    pygame.draw.polygon(screen, (0, 255, 0), draw_points)
-
+while True:
+    start = time.perf_counter()
     point_cloud, repulse_cloud = lidar()
 
-    draw_map(point_cloud)
     apf(repulse_cloud)
     deadreckoning()
 
-    # bot.set_motor(0, speed, 0, speed)
-    # bot.set_pwm_servo(1, steering_angle)
-
-    pygame.display.update()
-    clock.tick(60)  # limits FPS to 60
+    end = time.perf_counter()
+    print(f"fps {(1 / (end - start))}")
 
 
 laser.turnOff()
 laser.disconnecting()
-pygame.quit()

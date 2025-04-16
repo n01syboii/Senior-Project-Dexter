@@ -45,25 +45,25 @@ robot_running: bool = False
 yaw_final = yaw
 yaw_init = yaw
 
-q_star = 0.5
-repulse_strength = 1
+q_star = 1.0
+repulse_strength = 0.08
 d_star_goal = 0.5
-attractive_strength = 250
-goal_position = [0.0, 1]
+attractive_strength = 200
+goal_position = [0.0, 2.0]
 
 
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
 
 
-def vector_to_steering(angle: float) -> float:
-    if angle >= 0:
+def vector_to_servo(angle: float) -> float:
+    angle = 180 - angle
+
+    if angle <= 180:
         return angle
-
-    if angle > -90:
-        return 0
-
-    return 180
+    if angle <= 270:
+        return 180
+    return 0
 
 
 def repulsive_formal(repulse_cloud) -> float:
@@ -107,8 +107,12 @@ def lidar() -> None:
 
     for point in scan.points:
         point_range = point.range
+        point_angle = point.angle
 
         if point_range < 0.09:
+            continue
+
+        if -0.7 < point_angle < 0.7:
             continue
 
         angle_list.append(point.angle + math.pi / 2)
@@ -133,9 +137,9 @@ def lidar() -> None:
 def apf(repulse_cloud):
     potential_sum = np.zeros(2)
 
-    # x, y = repulsive_formal(repulse_cloud)
-    # potential_sum[0] -= x
-    # potential_sum[1] -= y
+    x, y = repulsive_formal(repulse_cloud)
+    potential_sum[0] += x
+    potential_sum[1] -= y
 
     potential_sum[0] += attractive_formal(goal_position[0] - position[0])
     potential_sum[1] += attractive_formal(goal_position[1] - position[1])
@@ -147,8 +151,8 @@ def apf(repulse_cloud):
         f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
     )
 
-    resultant_angle = clamp(vector_to_steering(resultant_angle), 30, 160)
-    resultant_magnitude = clamp(resultant_magnitude, 0, 40)
+    resultant_angle = vector_to_servo(resultant_angle)
+    resultant_magnitude = clamp(resultant_magnitude, 0, 35)
 
     bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
     bot.set_pwm_servo(1, resultant_angle)

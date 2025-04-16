@@ -46,11 +46,11 @@ robot_running: bool = False
 yaw_final = yaw
 yaw_init = yaw
 
-q_star = 0.5
-repulse_strength = 1
+q_star = 0.6
+repulse_strength = 0.07
 d_star_goal = 0.5
-attractive_strength = 100
-goal_position = [0, 0.0]
+attractive_strength = 200
+goal_position = [0.0, 2.0]
 
 
 # pygame setup
@@ -65,13 +65,13 @@ def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
 
 
-def tranfrom_matrix(matrix, angle_degrees, move_x, move_y):
+def tranfrom_matrix(matrix, angle_degrees):
     theta = np.radians(angle_degrees)
     cos_a, sin_a = np.cos(theta), np.sin(theta)
     rotation_matrix = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
     matrix = matrix @ rotation_matrix
-    matrix[0] += move_x
-    matrix[1] += move_y
+    matrix[:, 0] += 500 + int(position[0] * 100)
+    matrix[:, 1] += 500 + int(position[0] * 100)
 
     return matrix
 
@@ -133,8 +133,12 @@ def lidar() -> None:
 
     for point in scan.points:
         point_range = point.range
+        point_angle = point.angle
 
         if point_range < 0.09:
+            continue
+
+        if -0.7 < point_angle < 0.7:
             continue
 
         angle_list.append(point.angle + math.pi / 2)
@@ -159,9 +163,9 @@ def lidar() -> None:
 def apf(repulse_cloud):
     potential_sum = np.zeros(2)
 
-    # x, y = repulsive_formal(repulse_cloud)
-    # potential_sum[0] -= x
-    # potential_sum[1] -= y
+    x, y = repulsive_formal(repulse_cloud)
+    potential_sum[0] += x
+    potential_sum[1] -= y
 
     potential_sum[0] += attractive_formal(goal_position[0] - position[0])
     potential_sum[1] += attractive_formal(goal_position[1] - position[1])
@@ -178,7 +182,9 @@ def apf(repulse_cloud):
         [35, 15],
         [35, 10],
     ]
-    pygame.draw.polygon(screen, (100, 100, 100), draw_points)
+
+    draw_points = tranfrom_matrix(draw_points, resultant_angle)
+    pygame.draw.polygon(screen, (30, 0, 255), draw_points)
 
     print(
         f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
@@ -241,10 +247,39 @@ while running:
 
     screen.fill("white")
     screen.blit(update_fps(), (10, 0))
+
+    draw_points = np.array(
+        [
+            [-15, 10],
+            [-15, -10],
+            [15, 0],
+        ]
+    )
+
+    draw_points = tranfrom_matrix(draw_points, position[2])
+    pygame.draw.polygon(screen, (0, 255, 0), draw_points)
+    pygame.draw.circle(
+        screen,
+        (255, 255, 0),
+        (
+            goal_position[0] * 100 - position[0] * 100 + 500,
+            -goal_position[1] * 100 + position[1] * 100 + 500,
+        ),
+        8,
+    )
+
+    point_cloud, repulse_cloud = lidar()
+
+    draw_map(point_cloud)
+    apf(repulse_cloud)
+    deadreckoning()
     key = pygame.key.get_pressed()
 
     steering_angle: int
     speed: int
+
+    if key[pygame.K_r]:
+        position = np.array([0.0, 0.0, 90.0])
 
     if key[pygame.K_w]:
         speed = 45
@@ -260,27 +295,7 @@ while running:
     else:
         steering_angle = 90
 
-    draw_x = int(position[0] * 100) + 500
-    draw_y = int(position[1] * 100) + 500
-
-    draw_points = np.array(
-        [
-            [10, 15],
-            [-10, 15],
-            [0, -15],
-        ]
-    )
-    draw_points = tranfrom_matrix(draw_points, position[2], draw_x, draw_y)
-
-    pygame.draw.polygon(screen, (0, 255, 0), draw_points)
-
-    point_cloud, repulse_cloud = lidar()
-
-    draw_map(point_cloud)
-    apf(repulse_cloud)
-    deadreckoning()
-
-    # bot.set_motor(0, speed, 0, speed)
+    bot.set_motor(0, speed, 0, speed)
     # bot.set_pwm_servo(1, steering_angle)
 
     pygame.display.update()

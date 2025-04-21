@@ -31,8 +31,12 @@ lidar_init = laser.initialize() and laser.turnOn()
 bot = Rosmaster()
 bot.create_receive_threading()
 
-map = np.zeros((480, 270))
 position = np.array([0.0, 0.0, 90.0])
+mini_map = np.zeros((250, 250))
+map = np.zeros(1000, 1000)
+
+grid_size = 4
+grid_threshold = 5
 
 bot.get_motor_encoder()
 time.sleep(1)
@@ -109,7 +113,9 @@ def repulsive_formal(repulse_cloud) -> float:
         * (repulse_cloud[1] / distance)
     )
 
-    return np.sum(x), np.sum(y)
+    print(len(repulse_cloud))
+
+    return np.sum(x) / len(repulse_cloud), np.sum(y) / len(repulse_cloud)
 
 
 def attractive_formal(axis: float) -> float:
@@ -135,10 +141,7 @@ def lidar() -> None:
         point_range = point.range
         point_angle = point.angle
 
-        if point_range < 0.09:
-            continue
-
-        if -0.7 < point_angle < 0.7:
+        if point_range < 0.09 or -0.7 < point_angle < 0.7:
             continue
 
         angle_list.append(point.angle + math.pi / 2)
@@ -158,6 +161,20 @@ def lidar() -> None:
     repulse_cloud = [x[repulse_list], y[repulse_list]]
 
     return point_cloud, repulse_cloud
+
+
+def make_mini_map(point_cloud):
+    mini_map = np.zeros(250, 250)
+    other_map = [
+        np.floor(point_cloud[0] / grid_size),
+        np.floor(point_cloud[1] / grid_size),
+    ]
+
+    for point in other_map:
+        mini_map[point[0], point[1]] += 1 / grid_threshold
+
+    mini_map = (mini_map >= 1).astype(int)
+    return mini_map
 
 
 def apf(repulse_cloud):

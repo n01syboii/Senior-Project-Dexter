@@ -1,10 +1,11 @@
 import math
 import time
 
-# measure the yaw of the robot with the hlp of IMU sensor
 import numpy as np
 import ydlidar
 from Rosmaster_Lib import Rosmaster
+
+from apf import apf
 
 ports = ydlidar.lidarPortList()
 port = "/dev/ydlidar"
@@ -44,67 +45,11 @@ robot_running: bool = False
 yaw_final = yaw
 yaw_init = yaw
 
-q_star = 1
-repulse_strength = 5
-d_star_goal = 0.5
+q_star = 0.8
+repulse_strength = 8
+d_star_goal = 0.8
 attractive_strength = 100
-goal_position = [0.5, 2.0]
-
-
-def clamp(n, minn, maxn):
-    return max(min(maxn, n), minn)
-
-
-def vector_to_servo(angle: float) -> float:
-    angle = 180 - angle
-
-    if angle <= 180:
-        return angle
-    if angle <= 270:
-        return 180
-    return 0
-
-
-def repulsive_formal(repulse_cloud) -> float:
-    num_points = len(repulse_cloud[0])
-
-    if num_points == 0:
-        return 0.0, 0.0
-
-    distance = (repulse_cloud[0] ** 2 + repulse_cloud[1] ** 2) ** 0.5
-
-    x = (
-        repulse_strength
-        * ((1 / q_star) - (1 / distance))
-        * (1 / (distance**2))
-        * (repulse_cloud[0] / distance)
-    )
-
-    y = (
-        repulse_strength
-        * ((1 / q_star) - (1 / distance))
-        * (1 / (distance**2))
-        * (repulse_cloud[1] / distance)
-    )
-
-    return [np.sum(x) / num_points, -np.sum(y) / num_points]
-
-
-def attractive_formal():
-    goal_xy = [goal_position[0] - position[0], goal_position[1] - position[1]]
-    distance = np.linalg.norm(goal_xy)
-
-    print(f"distance: {distance}")
-
-    if distance <= d_star_goal:
-        x = attractive_strength * goal_xy[0]
-        y = attractive_strength * goal_xy[1]
-        return [x, y]
-
-    x = (d_star_goal * attractive_strength * goal_xy[0]) / (distance)
-    y = (d_star_goal * attractive_strength * goal_xy[1]) / (distance)
-
-    return [x, y]
+goal_position = [0.0, 2.0]
 
 
 def lidar() -> None:
@@ -124,12 +69,7 @@ def lidar() -> None:
 
         angle_list.append(point.angle + math.pi / 2)
         range_list.append(point_range)
-        repulse_list.append(
-            (
-                point_range
-                < q_star  # and not (-math.pi / 2 < point_angle < math.pi / 2)
-            )
-        )
+        repulse_list.append((point_range < q_star))
 
     angle_list = np.array(angle_list)
     range_list = np.array(range_list)
@@ -144,26 +84,6 @@ def lidar() -> None:
     repulse_cloud = [x[repulse_list], y[repulse_list]]
 
     return point_cloud, repulse_cloud
-
-
-def apf(repulse_cloud):
-    potential_sum = np.zeros(2)
-
-    potential_sum += repulsive_formal(repulse_cloud)
-    potential_sum += attractive_formal()
-
-    resultant_magnitude = np.linalg.norm(potential_sum)
-    resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
-
-    print(
-        f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
-    )
-
-    resultant_angle = vector_to_servo(resultant_angle - position[2] + 90)
-    resultant_magnitude = clamp(resultant_magnitude, 0, 35)
-
-    bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
-    bot.set_pwm_servo(1, resultant_angle)
 
 
 def deadreckoning() -> None:
@@ -203,8 +123,20 @@ while True:
     start = time.perf_counter()
     point_cloud, repulse_cloud = lidar()
 
-    apf(repulse_cloud)
+    resultant_magnitude, resultant_angle = apf(
+        goal_position,
+        position,
+        d_star_goal,
+        attractive_strength,
+        repulse_cloud,
+        q_star,
+        repulse_strength,
+    )
+
     deadreckoning()
+
+    bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
+    bot.set_pwm_servo(1, resultant_angle)
 
     end = time.perf_counter()
     # print(f"fps {(1 / (end - start))}")

@@ -1,6 +1,8 @@
 import numpy as np
 from sklearn.cluster import DBSCAN
 
+db = DBSCAN(eps=0.1, min_samples=5)
+
 
 def clamp(n, minn, maxn):
     return max(min(maxn, n), minn)
@@ -11,16 +13,88 @@ def vector_to_servo(angle: float) -> float:
 
     if angle <= 180:
         return angle
-    if angle <= 270:
+    if angle <= 280:
         return 180
     return 0
+
+
+def get_obstacles(repulse_cloud):
+    if repulse_cloud.size == 0:
+        return np.array([])
+
+    repulse_cloud = repulse_cloud.T
+    labels = db.fit_predict(repulse_cloud)
+
+    # print(labels)
+    if max(labels) == -1:
+        return np.array([])
+
+    obstacles = np.full((max(labels) + 1, 2), np.inf)
+
+    for i, label in enumerate(labels):
+        if label == -1:
+            continue
+
+        if np.linalg.norm(obstacles[label]) > np.linalg.norm(repulse_cloud[i]):
+            obstacles[label] = repulse_cloud[i]
+
+    return obstacles.T
+
+
+def tunnel(goal_position, position, point_cloud, obstacles):
+    obstacles = obstacles.T
+    point_cloud = point_cloud.T
+
+    for obstacle in obstacles:
+        if obstacle[0] > 0:
+            right_edge = obstacle
+        else:
+            left_edge = obstacle
+
+    tunnel_cloud = []
+
+    for point in point_cloud:
+        min_x = left_edge[0]
+        max_x = right_edge[0]
+        min_y = min(right_edge[1], left_edge[1])
+        max_y = goal_position[1]
+
+        if min_x < point[0] < max_x and min_y < point[1] < max_y:
+            tunnel_cloud.append(point)
+
+    tunnel_cloud = np.array(tunnel_cloud)
+
+    tunnel_cloud[:, 0] += position[0] - goal_position[0]
+    tunnel_cloud[:, 1] += position[1] - goal_position[1]
+
+    labels = db.fit_predict(tunnel_cloud)
+
+    # print(labels)
+    if max(labels) == -1:
+        return np.array([])
+
+    tunnel_end = np.full((max(labels) + 1, 2), np.inf)
+
+    for i, label in enumerate(labels):
+        if label == -1:
+            continue
+
+        if np.linalg.norm(tunnel_end[label]) > np.linalg.norm(tunnel_cloud[i]):
+            tunnel_end[label] = tunnel_cloud[i]
+
+    tunnel_end[:, 0] += goal_position[0] - position[0]
+    tunnel_end[:, 1] += goal_position[1] - position[1]
+
+    print(f"weidth: {np.linalg.norm(tunnel_end[0] - tunnel_end[1])}")
+
+    return tunnel_end
 
 
 def attractive_formal(goal_position, position, d_star_goal, attractive_strength):
     goal_xy = [goal_position[0] - position[0], goal_position[1] - position[1]]
     distance = np.linalg.norm(goal_xy)
 
-    print(f"distance: {distance}")
+    # print(f"distance: {distance}")
 
     if distance <= d_star_goal:
         x = attractive_strength * goal_xy[0]
@@ -33,23 +107,10 @@ def attractive_formal(goal_position, position, d_star_goal, attractive_strength)
     return [x, y]
 
 
-def get_obstacles(repulse_cloud):
-    db = DBSCAN(eps=0.1, min_samples=5)
-    labels = db.fit_predict(repulse_cloud)
-
-    obstacles = np.full((max(labels), 2), np.inf)
-
-    for i, label in enumerate(labels):
-        if label == -1:
-            continue
-
-        if np.linalg.norm(obstacles[label]) > np.linalg.norm(repulse_cloud[i]):
-            obstacles[label] = repulse_cloud[i]
-
-    return obstacles
-
-
 def repulsive_formal(obstacles, q_star, repulse_strength) -> float:
+    if obstacles.size == 0:
+        return [0, 0]
+
     distance = (obstacles[0] ** 2 + obstacles[1] ** 2) ** 0.5
 
     x = (
@@ -66,15 +127,16 @@ def repulsive_formal(obstacles, q_star, repulse_strength) -> float:
         * (obstacles[1] / distance)
     )
 
-    return [np.sum(x), -np.sum(y)]
+    return [np.sum(x), np.sum(y)]
 
 
 def apf(
     goal_position,
     position,
+    point_cloud,
+    repulse_cloud,
     d_star_goal,
     attractive_strength,
-    repulse_cloud,
     q_star,
     repulse_strength,
 ):
@@ -85,6 +147,11 @@ def apf(
     )
 
     obstacles = get_obstacles(repulse_cloud)
+    print(f"obstacle: {obstacles.T}")
+
+    # tunnel_end = tunnel(goal_position, position, point_cloud, obstacles)
+    # print(f"tunnel_end: {tunnel_end}")
+
     potential_sum += repulsive_formal(obstacles, q_star, repulse_strength)
 
     resultant_magnitude = np.linalg.norm(potential_sum)

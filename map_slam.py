@@ -171,8 +171,8 @@ def lidar() -> None:
     x: float = np.cos(angle_list) * range_list
     y: float = np.sin(angle_list) * range_list
 
-    point_cloud = [x, y]
-    repulse_cloud = [x[repulse_list], y[repulse_list]]
+    point_cloud = np.array([x, y])
+    repulse_cloud = np.array([x[repulse_list], y[repulse_list]])
 
     return point_cloud, repulse_cloud
 

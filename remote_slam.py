@@ -46,10 +46,10 @@ yaw_final = yaw
 yaw_init = yaw
 
 q_star = 0.8
-repulse_strength = 8
+repulse_strength = 9
 d_star_goal = 0.8
 attractive_strength = 100
-goal_position = [0.0, 2.0]
+goal_position = [0.0, 1.5]
 
 
 def lidar() -> None:
@@ -67,7 +67,7 @@ def lidar() -> None:
         if point_range < 0.09 or -0.7 < point_angle < 0.7:
             continue
 
-        angle_list.append(point.angle + math.pi / 2)
+        angle_list.append(-point.angle - math.pi / 2)
         range_list.append(point_range)
         repulse_list.append((point_range < q_star))
 
@@ -80,8 +80,8 @@ def lidar() -> None:
     x: float = np.cos(angle_list) * range_list
     y: float = np.sin(angle_list) * range_list
 
-    point_cloud = [x, y]
-    repulse_cloud = [x[repulse_list], y[repulse_list]]
+    point_cloud = np.array([x, y])
+    repulse_cloud = np.array([x[repulse_list], y[repulse_list]])
 
     return point_cloud, repulse_cloud
 
@@ -126,9 +126,10 @@ while True:
     resultant_magnitude, resultant_angle = apf(
         goal_position,
         position,
+        point_cloud,
+        repulse_cloud,
         d_star_goal,
         attractive_strength,
-        repulse_cloud,
         q_star,
         repulse_strength,
     )

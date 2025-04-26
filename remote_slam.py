@@ -6,6 +6,7 @@ import ydlidar
 from Rosmaster_Lib import Rosmaster
 
 from apf import apf
+from narrow import plot
 
 ports = ydlidar.lidarPortList()
 port = "/dev/ydlidar"
@@ -46,6 +47,7 @@ yaw_final = yaw
 yaw_init = yaw
 
 q_star = 0.8
+min_q_star = 0.3
 repulse_strength = 9
 d_star_goal = 0.8
 attractive_strength = 100
@@ -119,9 +121,42 @@ def deadreckoning() -> None:
     prev_right_encoder = current_right_encoder
 
 
+def adaptive_q_star(width, default_q_star=0.8, min_q_star=0.3, safety_margin=0.1):
+    if width is None:
+        return default_q_star
+
+    # Adjust width by safety margin
+    adjusted_width = width - safety_margin
+
+    # Calculate new q_star (half the width to allow robot to pass through)
+    new_q_star = max(adjusted_width / 2, min_q_star)
+
+    # Smoothly transition to the new q_star (optional)
+    # This can prevent abrupt changes in behavior
+    q_star = 0.7 * new_q_star + 0.3 * default_q_star
+
+    return q_star
+
+
+run_once = True
+
 while True:
     start = time.perf_counter()
     point_cloud, repulse_cloud = lidar()
+
+    if run_once:
+        width = plot(scan, 10)
+        print(width)
+
+        if width is not None:
+            q_star = adaptive_q_star(width, q_star, 0.3)
+            print(q_star)
+            # repulse_strength = adaptive_q_star(width, 9, 0.5)
+            # print(repulse_strength)
+            print(width)
+            run_once = False
+        else:
+            continue
 
     resultant_magnitude, resultant_angle = apf(
         goal_position,

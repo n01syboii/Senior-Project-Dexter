@@ -221,7 +221,7 @@ def apf(repulse_cloud):
     resultant_magnitude = clamp(resultant_magnitude, 0, 40)
 
     # bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
-    bot.set_pwm_servo(1, resultant_angle)
+    # bot.set_pwm_servo(1, resultant_angle)
 
 
 def draw_map(point_cloud) -> None:
@@ -321,7 +321,7 @@ while running:
     else:
         steering_angle = 90
 
-    bot.set_motor(0, speed, 0, speed)
+    # bot.set_motor(0, speed, 0, speed)
     # bot.set_pwm_servo(1, steering_angle)
 
     pygame.display.update()

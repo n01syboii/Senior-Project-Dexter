@@ -6,7 +6,6 @@ import ydlidar
 from Rosmaster_Lib import Rosmaster
 
 from apf import apf
-from narrow import plot
 
 ports = ydlidar.lidarPortList()
 port = "/dev/ydlidar"
@@ -48,10 +47,10 @@ yaw_init = yaw
 
 q_star = 0.8
 min_q_star = 0.3
-repulse_strength = 9
+repulse_strength = 8
 d_star_goal = 0.8
-attractive_strength = 100
-goal_position = [0.0, 1.5]
+attractive_strength = 150
+goal_position = [0.0, 3.5]
 
 
 def lidar() -> None:
@@ -107,6 +106,9 @@ def deadreckoning() -> None:
         _, _, yaw = bot.get_imu_attitude_data()
         real_angle = yaw - fix_angel_drift
 
+        if real_angle < 0:
+            real_angle = 360 + real_angle
+
         distance = ave_encoder_diff / encoder_to_meter
         position[0] += math.cos(math.radians(real_angle)) * distance
         position[1] += math.sin(math.radians(real_angle)) * distance
@@ -121,42 +123,9 @@ def deadreckoning() -> None:
     prev_right_encoder = current_right_encoder
 
 
-def adaptive_q_star(width, default_q_star=0.8, min_q_star=0.3, safety_margin=0.1):
-    if width is None:
-        return default_q_star
-
-    # Adjust width by safety margin
-    adjusted_width = width - safety_margin
-
-    # Calculate new q_star (half the width to allow robot to pass through)
-    new_q_star = max(adjusted_width / 2, min_q_star)
-
-    # Smoothly transition to the new q_star (optional)
-    # This can prevent abrupt changes in behavior
-    q_star = 0.7 * new_q_star + 0.3 * default_q_star
-
-    return q_star
-
-
-run_once = True
-
 while True:
     start = time.perf_counter()
     point_cloud, repulse_cloud = lidar()
-
-    if run_once:
-        width = plot(scan, 10)
-        print(width)
-
-        if width is not None:
-            q_star = adaptive_q_star(width, q_star, 0.3)
-            print(q_star)
-            # repulse_strength = adaptive_q_star(width, 9, 0.5)
-            # print(repulse_strength)
-            print(width)
-            run_once = False
-        else:
-            continue
 
     resultant_magnitude, resultant_angle = apf(
         goal_position,
@@ -166,13 +135,30 @@ while True:
         d_star_goal,
         attractive_strength,
         q_star,
+        min_q_star,
         repulse_strength,
     )
 
     deadreckoning()
+    correct_range = 0.2
 
-    bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
-    bot.set_pwm_servo(1, resultant_angle)
+    correct_x = (
+        goal_position[0] - correct_range
+        < position[0]
+        < goal_position[0] + correct_range
+    )
+    correct_y = (
+        goal_position[1] - correct_range
+        < position[1]
+        < goal_position[1] + correct_range
+    )
+
+    if correct_x and correct_y:
+        bot.set_motor(0, 0, 0, 0)
+        bot.set_pwm_servo(1, 90)
+    else:
+        bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
+        bot.set_pwm_servo(1, resultant_angle)
 
     end = time.perf_counter()
     # print(f"fps {(1 / (end - start))}")

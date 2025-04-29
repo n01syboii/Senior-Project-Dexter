@@ -66,7 +66,7 @@ def get_obstacles(repulse_cloud):
     return obstacles
 
 
-def get_tunnel_weidth(goal_position, position, point_cloud, obstacles):
+def get_tunnel_width(goal_position, position, point_cloud, obstacles):
     point_cloud = point_cloud.T
 
     obstacles_filter = []
@@ -208,9 +208,9 @@ def repulsive_formal(obstacles, q_star, repulse_strength, div) -> float:
     return [np.sum(x) / div, np.sum(y) / div]
 
 
-prev_weidth = 0.0
+prev_width = 0.0
 prev_point = np.zeros(2)
-weidth_timer = 0
+width_timer = 0
 
 
 def apf(
@@ -224,13 +224,13 @@ def apf(
     min_q_star,
     repulse_strength,
 ):
-    global prev_weidth, prev_point, weidth_timer
+    global prev_width, prev_point, width_timer
     potential_sum = np.zeros(2)
     attractive = np.zeros(2)
     repulse = np.zeros(2)
 
     obstacles = get_obstacles(repulse_cloud)
-    tunnel_weidth, entrance_point = get_tunnel_weidth(
+    tunnel_width, entrance_point = get_tunnel_width(
         goal_position, position, point_cloud, obstacles
     )
 
@@ -238,26 +238,26 @@ def apf(
         goal_position, position, d_star_goal, attractive_strength
     )
 
-    print(f"tunnel_weidth: {tunnel_weidth}")
+    print(f"tunnel_weidth: {tunnel_width}")
     in_tunnel = is_in_tunnel(obstacles)
 
-    if tunnel_weidth > 0:
-        weidth_timer += 1
-        if weidth_timer < 30:
-            tunnel_weidth = prev_weidth
+    if tunnel_width > 0:
+        width_timer += 1
+        if width_timer < 30:
+            tunnel_width = prev_width
             entrance_point = prev_point
     else:
-        prev_weidth = tunnel_weidth
+        prev_width = tunnel_width
         prev_point = entrance_point
-        weidth_timer = 0
+        width_timer = 0
 
-    if 0 <= tunnel_weidth < 0.40:
+    if 0 <= tunnel_width < 0.40:
         entrance_point[1] -= 0.25
         if entrance_point[0] != 0 and entrance_point[1] != 0:
             obstacles = np.vstack([obstacles, entrance_point])
-    elif tunnel_weidth >= 0.40:
+    elif tunnel_width >= 0.40:
         entrance_point[1] += 0.6
-        q_star = adaptive_q_star(tunnel_weidth, q_star, min_q_star)
+        q_star = adaptive_q_star(tunnel_width, q_star, min_q_star)
         attractive += attractive_formal(
             (entrance_point + [position[0], position[1]]),
             position,
@@ -266,7 +266,7 @@ def apf(
         )
 
     if in_tunnel:
-        q_star = adaptive_q_star(tunnel_weidth, q_star, min_q_star)
+        q_star = adaptive_q_star(tunnel_width, q_star, min_q_star)
 
     potential_sum += attractive
 

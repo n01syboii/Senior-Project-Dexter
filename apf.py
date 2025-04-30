@@ -50,7 +50,6 @@ def get_obstacles(repulse_cloud):
 
     labels = db.fit_predict(repulse_cloud)
 
-    # print(labels)
     if max(labels) == -1:
         return np.array([])
 
@@ -77,7 +76,6 @@ def get_tunnel_width(goal_position, position, point_cloud, obstacles):
         )
 
     obstacles = obstacles[obstacles_filter]
-    print(obstacles)
 
     if len(obstacles) == 0:
         return -1.0, np.array([0.0, 0.0])
@@ -168,21 +166,19 @@ def adaptive_q_star(width, default_q_star=0.8, min_q_star=0.3, safety_margin=0.1
     return 0.4
 
 
-def attractive_formal(goal_position, position, d_star_goal, attractive_strength):
+def attractive_formal(goal_position, position, d_star_goal, attractive_strength, mul=1):
     goal_xy = [goal_position[0] - position[0], goal_position[1] - position[1]]
     distance = np.linalg.norm(goal_xy)
-
-    # print(f"distance: {distance}")
 
     if distance <= d_star_goal:
         x = attractive_strength * goal_xy[0]
         y = attractive_strength * goal_xy[1]
         return [x, y]
 
-    x = (d_star_goal * attractive_strength * goal_xy[0]) / (distance)
-    y = (d_star_goal * attractive_strength * goal_xy[1]) / (distance)
+    x = (d_star_goal * attractive_strength * goal_xy[0] * mul) / (distance)
+    y = (d_star_goal * attractive_strength * goal_xy[1] * mul) / (distance)
 
-    return [x, y]
+    return np.array([x, y])
 
 
 def repulsive_formal(obstacles, q_star, repulse_strength, div) -> float:
@@ -238,12 +234,11 @@ def apf(
         goal_position, position, d_star_goal, attractive_strength
     )
 
-    print(f"tunnel_weidth: {tunnel_width}")
     in_tunnel = is_in_tunnel(obstacles)
 
-    if tunnel_width > 0:
+    if tunnel_width <= 0:
         width_timer += 1
-        if width_timer < 30:
+        if width_timer < 60:
             tunnel_width = prev_width
             entrance_point = prev_point
     else:
@@ -251,19 +246,27 @@ def apf(
         prev_point = entrance_point
         width_timer = 0
 
-    if 0 <= tunnel_width < 0.40:
+    print(f"tunnel_weidth: {tunnel_width}")
+    print(attractive)
+
+    min_tunnel_width = 0.35
+
+    if 0 <= tunnel_width < min_tunnel_width:
         entrance_point[1] -= 0.25
         if entrance_point[0] != 0 and entrance_point[1] != 0:
             obstacles = np.vstack([obstacles, entrance_point])
-    elif tunnel_width >= 0.40:
-        entrance_point[1] += 0.6
+    elif tunnel_width >= min_tunnel_width:
+        entrance_point[1] += 0.8
         q_star = adaptive_q_star(tunnel_width, q_star, min_q_star)
+        print
         attractive += attractive_formal(
             (entrance_point + [position[0], position[1]]),
             position,
             d_star_goal,
             attractive_strength,
+            15,
         )
+    print(attractive)
 
     if in_tunnel:
         q_star = adaptive_q_star(tunnel_width, q_star, min_q_star)
@@ -273,8 +276,8 @@ def apf(
     repulse = repulsive_formal(obstacles.T, q_star, repulse_strength, 1)
     potential_sum += repulse
 
-    repulse_magnitude = np.linalg.norm(repulse)
-    repulse_angle = np.degrees(np.arctan2(repulse[1], repulse[0]))
+    # repulse_magnitude = np.linalg.norm(repulse)
+    # repulse_angle = np.degrees(np.arctan2(repulse[1], repulse[0]))
 
     attractive_magnitude = np.linalg.norm(attractive)
     attractive_angle = np.degrees(np.arctan2(attractive[1], attractive[0]))
@@ -285,8 +288,8 @@ def apf(
     if resultant_angle < 0:
         resultant_angle = 360 + resultant_angle
 
-    if repulse_angle < 0:
-        repulse_angle = 360 + repulse_angle
+    # if repulse_angle < 0:
+    #     repulse_angle = 360 + repulse_angle
 
     if attractive_angle < 0:
         attractive_angle = 360 + attractive_angle
@@ -295,7 +298,7 @@ def apf(
         f"attractive | magnitudr: {attractive_magnitude:.2f} | angle:{attractive_angle:.2f}"
     )
 
-    print(f"repulse | magnitude: {repulse_magnitude:.2f} | angle:{repulse_angle:.2f}")
+    # print(f"repulse | magnitude: {repulse_magnitude:.2f} | angle:{repulse_angle:.2f}")
 
     print(
         f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
@@ -308,8 +311,5 @@ def apf(
         resultant_angle = proportional_steering(resultant_angle - position[2] + 90, 70)
 
     resultant_magnitude = clamp(resultant_magnitude, 0, 35)
-
-    print(f"servo: {resultant_angle}")
-    # time.sleep(3)
 
     return resultant_magnitude, resultant_angle

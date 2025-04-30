@@ -140,7 +140,7 @@ while True:
     )
 
     deadreckoning()
-    correct_range = 0.2
+    correct_range = 0.3
 
     correct_x = (
         goal_position[0] - correct_range

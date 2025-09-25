@@ -3,13 +3,15 @@ import time
 
 from Rosmaster_Lib import Rosmaster
 
+# Initialize robot and start receiving data
 bot = Rosmaster()
 bot.create_receive_threading()
 
+# Conversion factor from encoder ticks to meters
 encoder_to_meter = 1 / (2 * math.pi * 0.03) * 850
 
-
 def moveDistance(m):
+    # Move the robot forward by m meters using encoder feedback
     _, prev_left_encoder, _, prev_right_encoder = bot.get_motor_encoder()
     while True:
         _, current_left_encoder, _, current_right_encoder = bot.get_motor_encoder()
@@ -21,19 +23,18 @@ def moveDistance(m):
         if ave_encoder_diff >= m * encoder_to_meter:
             break
 
-        bot.set_motor(0, 30, 0, 30)
+        bot.set_motor(0, 30, 0, 30)  # Move forward
 
-    bot.set_motor(0, 0, 0, 0)
+    bot.set_motor(0, 0, 0, 0)  # Stop motors
     print(
         "Distance moved in cm = ", (ave_encoder_diff * 100) / encoder_to_meter
-    )  # print value in cm
-
+    )  # Output distance moved
 
 def main():
+    # Example: move robot forward by 0.5 meters
     bot.get_motor_encoder()
     time.sleep(1)
     moveDistance(0.5)
-
 
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ from Rosmaster_Lib import Rosmaster
 
 from apf import apf
 
+# Lidar initialization
 ports = ydlidar.lidarPortList()
 port = "/dev/ydlidar"
 for key, value in ports.items():
@@ -27,12 +28,14 @@ laser.setlidaropt(ydlidar.LidarPropMinRange, 0.01)
 scan = ydlidar.LaserScan()
 lidar_init = laser.initialize() and laser.turnOn()
 
-
+# Robot initialization
 bot = Rosmaster()
 bot.create_receive_threading()
 
+# Robot state
 position = np.array([0.0, 0.0, 90.0])
 
+# Encoder and IMU initialization
 bot.get_motor_encoder()
 time.sleep(1)
 _, prev_left_encoder, _, prev_right_encoder = bot.get_motor_encoder()
@@ -43,18 +46,17 @@ _, _, yaw = bot.get_imu_attitude_data()
 fix_angel_drift: float = yaw - 90
 robot_running: bool = False
 yaw_final = yaw
-
-
 yaw_init = yaw
 
+# APF parameters
 q_star = 0.8
 repulse_strength = 9
 d_star_goal = 0.8
 attractive_strength = 100
 goal_position = [0.0, 1.5]
 
-
 def lidar() -> None:
+    # Acquire and process lidar scan, return point clouds
     if not laser.doProcessSimple(scan):
         return
 
@@ -87,8 +89,8 @@ def lidar() -> None:
 
     return point_cloud, repulse_cloud
 
-
 def deadreckoning() -> None:
+    # Update robot position using wheel encoders and IMU
     global prev_left_encoder, prev_right_encoder, fix_angel_drift
     global yaw, robot_running, yaw_init, yaw_final, position
 
@@ -120,7 +122,7 @@ def deadreckoning() -> None:
     prev_left_encoder = current_left_encoder
     prev_right_encoder = current_right_encoder
 
-
+# Main control loop
 while True:
     start = time.perf_counter()
     point_cloud, repulse_cloud = lidar()
@@ -142,8 +144,8 @@ while True:
     bot.set_pwm_servo(1, resultant_angle)
 
     end = time.perf_counter()
-    # print(f"fps {(1 / (end - start))}")
+    # Uncomment for FPS debug: print(f"fps {(1 / (end - start))}")
 
-
+# Cleanup
 laser.turnOff()
 laser.disconnecting()

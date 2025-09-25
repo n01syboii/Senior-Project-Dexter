@@ -1,14 +1,15 @@
 import numpy as np
 from sklearn.cluster import DBSCAN
 
+# DBSCAN clustering for obstacle grouping
 db = DBSCAN(eps=0.1, min_samples=5)
 
-
 def clamp(n, minn, maxn):
+    # Clamp n between minn and maxn
     return max(min(maxn, n), minn)
 
-
 def vector_to_servo(angle: float) -> float:
+    # Convert vector angle to servo-compatible angle
     angle = 180 - angle
 
     if angle <= 180:
@@ -17,15 +18,14 @@ def vector_to_servo(angle: float) -> float:
         return 180
     return 0
 
-
 def get_obstacles(repulse_cloud):
+    # Cluster repulsive points and return closest obstacle in each cluster
     if repulse_cloud.size == 0:
         return np.array([])
 
     repulse_cloud = repulse_cloud.T
     labels = db.fit_predict(repulse_cloud)
 
-    # print(labels)
     if max(labels) == -1:
         return np.array([])
 
@@ -34,14 +34,13 @@ def get_obstacles(repulse_cloud):
     for i, label in enumerate(labels):
         if label == -1:
             continue
-
         if np.linalg.norm(obstacles[label]) > np.linalg.norm(repulse_cloud[i]):
             obstacles[label] = repulse_cloud[i]
 
     return obstacles.T
 
-
 def tunnel(goal_position, position, point_cloud, obstacles):
+    # Identify tunnel endpoints between obstacles
     obstacles = obstacles.T
     point_cloud = point_cloud.T
 
@@ -69,7 +68,6 @@ def tunnel(goal_position, position, point_cloud, obstacles):
 
     labels = db.fit_predict(tunnel_cloud)
 
-    # print(labels)
     if max(labels) == -1:
         return np.array([])
 
@@ -78,7 +76,6 @@ def tunnel(goal_position, position, point_cloud, obstacles):
     for i, label in enumerate(labels):
         if label == -1:
             continue
-
         if np.linalg.norm(tunnel_end[label]) > np.linalg.norm(tunnel_cloud[i]):
             tunnel_end[label] = tunnel_cloud[i]
 
@@ -89,12 +86,10 @@ def tunnel(goal_position, position, point_cloud, obstacles):
 
     return tunnel_end
 
-
 def attractive_formal(goal_position, position, d_star_goal, attractive_strength):
+    # Attractive force calculation towards goal
     goal_xy = [goal_position[0] - position[0], goal_position[1] - position[1]]
     distance = np.linalg.norm(goal_xy)
-
-    # print(f"distance: {distance}")
 
     if distance <= d_star_goal:
         x = attractive_strength * goal_xy[0]
@@ -106,8 +101,8 @@ def attractive_formal(goal_position, position, d_star_goal, attractive_strength)
 
     return [x, y]
 
-
 def repulsive_formal(obstacles, q_star, repulse_strength) -> float:
+    # Repulsive force calculation from obstacles
     if obstacles.size == 0:
         return [0, 0]
 
@@ -129,7 +124,6 @@ def repulsive_formal(obstacles, q_star, repulse_strength) -> float:
 
     return [np.sum(x), np.sum(y)]
 
-
 def apf(
     goal_position,
     position,
@@ -140,6 +134,7 @@ def apf(
     q_star,
     repulse_strength,
 ):
+    # Main Artificial Potential Field (APF) function
     potential_sum = np.zeros(2)
 
     potential_sum += attractive_formal(
@@ -149,6 +144,7 @@ def apf(
     obstacles = get_obstacles(repulse_cloud)
     print(f"obstacle: {obstacles.T}")
 
+    # Uncomment below to use tunnel endpoint logic
     # tunnel_end = tunnel(goal_position, position, point_cloud, obstacles)
     # print(f"tunnel_end: {tunnel_end}")
 

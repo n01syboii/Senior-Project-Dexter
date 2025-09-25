@@ -1,12 +1,12 @@
 import math
 import time
 
-# measure the yaw of the robot with the hlp of IMU sensor
 import numpy as np
 import pygame
 import ydlidar
 from Rosmaster_Lib import Rosmaster
 
+# Lidar setup
 ports = ydlidar.lidarPortList()
 port = "/dev/ydlidar"
 for key, value in ports.items():
@@ -27,17 +27,19 @@ laser.setlidaropt(ydlidar.LidarPropMinRange, 0.01)
 scan = ydlidar.LaserScan()
 lidar_init = laser.initialize() and laser.turnOn()
 
-
+# Robot setup
 bot = Rosmaster()
 bot.create_receive_threading()
 
-position = np.array([0.0, 0.0, 90.0])
+# State and map initialization
+position = np.array([0.0, 0.0, 90.0])  # [x, y, yaw]
 mini_map = np.zeros((250, 250))
 map = np.zeros((1000, 1000))
 
 grid_size = 4
 grid_threshold = 5
 
+# Encoder and IMU initialization
 bot.get_motor_encoder()
 time.sleep(1)
 _, prev_left_encoder, _, prev_right_encoder = bot.get_motor_encoder()
@@ -50,160 +52,134 @@ robot_running: bool = False
 yaw_final = yaw
 yaw_init = yaw
 
+# APF parameters
 q_star = 1
 repulse_strength = 5
 d_star_goal = 0.5
 attractive_strength = 100
 goal_position = [0.5, 2.0]
 
-
-# pygame setup
+# Pygame setup for visualization
 pygame.init()
 screen = pygame.display.set_mode((1000, 1000))
 clock = pygame.time.Clock()
 running = True
 font = pygame.font.SysFont("Arial", 18)
 
-
 def clamp(n, minn, maxn):
+    # Clamp value n between minn and maxn
     return max(min(maxn, n), minn)
 
-
 def tranfrom_matrix(matrix, angle_degrees):
+    # Rotate and translate points for visualization
     theta = np.radians(angle_degrees)
     cos_a, sin_a = np.cos(theta), np.sin(theta)
     rotation_matrix = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
     matrix = matrix @ rotation_matrix
     matrix[:, 0] += 500 + int(position[0] * 100)
     matrix[:, 1] += 500 + int(position[1] * 100)
-
     return matrix
 
-
 def update_fps():
+    # Display FPS on screen
     fps = str(int(clock.get_fps()))
     fps_text = font.render(fps, 1, pygame.Color("coral"))
     return fps_text
 
-
 def vector_to_servo(angle: float) -> float:
+    # Convert vector angle to servo-compatible angle
     angle = 180 - angle
-
     if angle <= 180:
         return angle
     if angle <= 270:
         return 180
     return 0
 
-
 def repulsive_formal(repulse_cloud) -> float:
+    # Compute repulsive force from obstacles
     num_points = len(repulse_cloud[0])
-
     if num_points == 0:
         return 0.0, 0.0
-
     distance = (repulse_cloud[0] ** 2 + repulse_cloud[1] ** 2) ** 0.5
-
     x = (
         repulse_strength
         * ((1 / q_star) - (1 / distance))
         * (1 / (distance**2))
         * (repulse_cloud[0] / distance)
     )
-
     y = (
         repulse_strength
         * ((1 / q_star) - (1 / distance))
         * (1 / (distance**2))
         * (repulse_cloud[1] / distance)
     )
-
     return [np.sum(x) / num_points, -np.sum(y) / num_points]
 
-
 def attractive_formal():
+    # Compute attractive force towards goal
     goal_xy = [goal_position[0] - position[0], goal_position[1] - position[1]]
     distance = np.linalg.norm(goal_xy)
-
     print(f"distance: {distance}")
-
     if distance <= d_star_goal:
         x = attractive_strength * goal_xy[0]
         y = attractive_strength * goal_xy[1]
         return [x, y]
-
     x = (d_star_goal * attractive_strength * goal_xy[0]) / (distance)
     y = (d_star_goal * attractive_strength * goal_xy[1]) / (distance)
-
     return [x, y]
 
-
 def lidar() -> None:
+    # Get point cloud and repulsive cloud from lidar
     if not laser.doProcessSimple(scan):
         return
-
     angle_list = []
     range_list = []
     repulse_list = []
-
     for point in scan.points:
         point_range = point.range
         point_angle = point.angle
-
         if point_range < 0.09 or -0.7 < point_angle < 0.7:
             continue
-
         angle_list.append(point.angle + math.pi / 2)
         range_list.append(point_range)
         repulse_list.append(
             (
                 point_range
-                < q_star  # and not (-math.pi / 2 < point_angle < math.pi / 2)
+                < q_star  # repulsive if within q_star
             )
         )
-
     angle_list = np.array(angle_list)
     range_list = np.array(range_list)
-
     pos_angle = math.radians(position[2] - 90)
     angle_list -= pos_angle
-
     x: float = np.cos(angle_list) * range_list
     y: float = np.sin(angle_list) * range_list
-
     point_cloud = np.array([x, y])
     repulse_cloud = np.array([x[repulse_list], y[repulse_list]])
-
     return point_cloud, repulse_cloud
 
-
 def make_mini_map(point_cloud):
+    # Generate a mini occupancy grid from point cloud
     mini_map = np.zeros(250, 250)
     other_map = [
         np.floor(point_cloud[0] / grid_size),
         np.floor(point_cloud[1] / grid_size),
     ]
-
     for point in other_map:
         mini_map[point[0], point[1]] += 1 / grid_threshold
-
     mini_map = (mini_map >= 1).astype(int)
     return mini_map
 
-
 def apf(repulse_cloud):
+    # Artificial Potential Field control
     potential_sum = np.zeros(2)
-
     potential_sum += repulsive_formal(repulse_cloud)
     potential_sum += attractive_formal()
-
     resultant_magnitude = np.linalg.norm(potential_sum)
     resultant_angle = np.degrees(np.arctan2(potential_sum[1], potential_sum[0]))
-
     print(
         f"magnitude: {resultant_magnitude:.2f} | angle:{resultant_angle:.2f} | x: {position[0]:.2f} y: {position[1]:.2f} angel: {position[2]:.2f}"
     )
-
     draw_points = [
         [0, 10],
         [0, -10],
@@ -213,58 +189,47 @@ def apf(repulse_cloud):
         [35, 15],
         [35, 10],
     ]
-
     draw_points = tranfrom_matrix(draw_points, resultant_angle)
     pygame.draw.polygon(screen, (30, 0, 255), draw_points)
-
     resultant_angle = vector_to_servo(resultant_angle)
     resultant_magnitude = clamp(resultant_magnitude, 0, 40)
-
     # bot.set_motor(0, resultant_magnitude, 0, resultant_magnitude)
     bot.set_pwm_servo(1, resultant_angle)
 
-
 def draw_map(point_cloud) -> None:
+    # Draw lidar points on pygame map
     x_draw: float = point_cloud[0] * 100 + 500 + position[0] * 100
     y_draw: float = point_cloud[1] * 100 + 500 + position[1] * 100
-
     for i, _ in enumerate(x_draw):
         pygame.draw.circle(screen, (255, 0, 0), (x_draw[i], y_draw[i]), 2)
 
-
 def deadreckoning() -> None:
+    # Update robot position using wheel encoders and IMU
     global prev_left_encoder, prev_right_encoder, fix_angel_drift
     global yaw, robot_running, yaw_init, yaw_final, position
-
     _, current_left_encoder, _, current_right_encoder = bot.get_motor_encoder()
-
     left_encoder_diff: float = current_left_encoder - prev_left_encoder
     right_encoder_diff: float = current_right_encoder - prev_right_encoder
     ave_encoder_diff: float = (left_encoder_diff + right_encoder_diff) / 2
-
     if ave_encoder_diff != 0:
         if not robot_running:
             robot_running = True
             _, _, yaw_final = bot.get_imu_attitude_data()
             fix_angel_drift += yaw_final - yaw_init
-
         _, _, yaw = bot.get_imu_attitude_data()
         real_angle = yaw - fix_angel_drift
-
         distance = ave_encoder_diff / encoder_to_meter
         position[0] += math.cos(math.radians(real_angle)) * distance
         position[1] += math.sin(math.radians(real_angle)) * distance
         position[2] = real_angle
-
     else:
         if robot_running:
             robot_running = False
             _, _, yaw_init = bot.get_imu_attitude_data()
-
     prev_left_encoder = current_left_encoder
     prev_right_encoder = current_right_encoder
 
-
+# Main loop
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -273,6 +238,7 @@ while running:
     screen.fill("white")
     screen.blit(update_fps(), (10, 0))
 
+    # Draw robot
     draw_points = np.array(
         [
             [-15, 10],
@@ -280,7 +246,6 @@ while running:
             [15, 0],
         ]
     )
-
     draw_points = tranfrom_matrix(draw_points, position[2])
     pygame.draw.polygon(screen, (0, 255, 0), draw_points)
     pygame.draw.circle(
@@ -293,14 +258,14 @@ while running:
         8,
     )
 
+    # Lidar and APF
     point_cloud, repulse_cloud = lidar()
-
     draw_map(point_cloud)
     apf(repulse_cloud)
     deadreckoning()
 
+    # Manual control
     key = pygame.key.get_pressed()
-
     steering_angle: int
     speed: int
 
@@ -325,9 +290,9 @@ while running:
     # bot.set_pwm_servo(1, steering_angle)
 
     pygame.display.update()
-    clock.tick(60)  # limits FPS to 60
+    clock.tick(60)  # Limit FPS to 60
 
-
+# Cleanup
 laser.turnOff()
 laser.disconnecting()
 pygame.quit()
